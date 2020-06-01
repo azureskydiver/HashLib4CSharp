@@ -25,7 +25,7 @@ namespace HashLib4CSharp.PerformanceBenchmark
 
                 Console.WriteLine("\n\rPerformance Benchmark Finished");
 
-                Console.ReadLine();
+                // Console.ReadLine();
             }
             catch (Exception e)
             {
