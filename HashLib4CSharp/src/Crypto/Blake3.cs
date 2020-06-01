@@ -66,7 +66,6 @@ namespace HashLib4CSharp.Crypto
             // between rounds.
             public static void Compress(Span<uint> state,
                                         ReadOnlySpan<uint> CV,
-                                        ReadOnlySpan<uint> IV,
                                         ReadOnlySpan<uint> Block,
                                         ulong Counter,
                                         uint BlockLen,
@@ -81,10 +80,10 @@ namespace HashLib4CSharp.Crypto
                 state[5] = CV[5];
                 state[6] = CV[6];
                 state[7] = CV[7];
-                state[8] = IV[0];
-                state[9] = IV[1];
-                state[10] = IV[2];
-                state[11] = IV[3];
+                state[8] = Blake3.IV[0];
+                state[9] = Blake3.IV[1];
+                state[10] = Blake3.IV[2];
+                state[11] = Blake3.IV[3];
                 state[12] = (uint)Counter;
                 state[13] = (uint)(Counter >> 32);
                 state[14] = BlockLen;
