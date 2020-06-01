@@ -14,6 +14,7 @@ for the purposes of supporting the XXX (https://YYY) project.
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using HashLib4CSharp.Base;
 using HashLib4CSharp.Enum;
 using HashLib4CSharp.Interfaces;
@@ -519,36 +520,35 @@ namespace HashLib4CSharp.Crypto
             // update incorporates input into the chunkState.
             public unsafe void Update(ReadOnlySpan<byte> data)
             {
-                fixed (byte* blockPtr = _block)
+                var blockSpan = _block.AsSpan();
+                var blockSpanAsUint = MemoryMarshal.Cast<byte, uint>(blockSpan);
+
+                fixed (uint* blockPtr2 = _n.Block)
                 {
-                    fixed (uint* blockPtr2 = _n.Block)
+                    fixed (uint* cvPtr = _n.CV)
                     {
-                        fixed (uint* cvPtr = _n.CV)
+                        while (!data.IsEmpty)
                         {
-                            while (!data.IsEmpty)
+                            // If the block buffer is full, compress it and clear it. More
+                            // input is coming, so this compression is not flagChunkEnd.
+                            if (_blockLen == BlockSizeInBytes)
                             {
-                                // If the block buffer is full, compress it and clear it. More
-                                // input is coming, so this compression is not flagChunkEnd.
-                                if (_blockLen == BlockSizeInBytes)
-                                {
-                                    // copy the chunk block (bytes) into the node block and chain it.
-                                    Converters.le32_copy(blockPtr, 0, blockPtr2, 0,
-                                        BlockSizeInBytes);
-                                    _n.ChainingValue(cvPtr);
-                                    // clear the start flag for all but the first block
-                                    _n.Flags &= _n.Flags ^ flagChunkStart;
-                                    _blockLen = 0;
-                                }
-
-                                // Copy input bytes into the chunk block.
-                                var count = Math.Min(BlockSizeInBytes - _blockLen, data.Length);
-                                fixed(byte * dataPtr = &data[0])
-                                    PointerUtils.MemMove(blockPtr + _blockLen, dataPtr, count);
-
-                                _blockLen += count;
-                                BytesConsumed += count;
-                                data = data.Slice(count);
+                                // copy the chunk block (bytes) into the node block and chain it.
+                                fixed(byte * blockPtr = _block)
+                                    Converters.le32_copy(blockPtr, 0, blockPtr2, 0, BlockSizeInBytes);
+                                _n.ChainingValue(cvPtr);
+                                // clear the start flag for all but the first block
+                                _n.Flags &= _n.Flags ^ flagChunkStart;
+                                _blockLen = 0;
                             }
+
+                            // Copy input bytes into the chunk block.
+                            var count = Math.Min(BlockSizeInBytes - _blockLen, data.Length);
+                            data.Slice(0, count).CopyTo(blockSpan.Slice(_blockLen));
+
+                            _blockLen += count;
+                            BytesConsumed += count;
+                            data = data.Slice(count);
                         }
                     }
                 }
