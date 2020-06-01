@@ -58,6 +58,178 @@ namespace HashLib4CSharp.Crypto
         // bit vector indicating which stack elems are valid; also number of chunks added
         protected ulong Used;
 
+        protected static class Blake3Compressor
+        {
+            // compress is the core hash function, generating 16 pseudorandom words from a
+            // node.
+            // NOTE: we unroll all of the rounds, as well as the permutations that occur
+            // between rounds.
+            public static void Compress(Span<uint> state,
+                                        ReadOnlySpan<uint> CV,
+                                        ReadOnlySpan<uint> IV,
+                                        ReadOnlySpan<uint> Block,
+                                        ulong Counter,
+                                        uint BlockLen,
+                                        uint Flags)
+            {
+                // initializes state here
+                state[0] = CV[0];
+                state[1] = CV[1];
+                state[2] = CV[2];
+                state[3] = CV[3];
+                state[4] = CV[4];
+                state[5] = CV[5];
+                state[6] = CV[6];
+                state[7] = CV[7];
+                state[8] = IV[0];
+                state[9] = IV[1];
+                state[10] = IV[2];
+                state[11] = IV[3];
+                state[12] = (uint)Counter;
+                state[13] = (uint)(Counter >> 32);
+                state[14] = BlockLen;
+                state[15] = Flags;
+
+                // NOTE: we unroll all of the rounds, as well as the permutations that occur
+                // between rounds.
+                // Round 0
+                // Mix the columns.
+                G(state, 0, 4, 8, 12, Block[0], Block[1]);
+                G(state, 1, 5, 9, 13, Block[2], Block[3]);
+                G(state, 2, 6, 10, 14, Block[4], Block[5]);
+                G(state, 3, 7, 11, 15, Block[6], Block[7]);
+
+                // Mix the rows.
+                G(state, 0, 5, 10, 15, Block[8], Block[9]);
+                G(state, 1, 6, 11, 12, Block[10], Block[11]);
+                G(state, 2, 7, 8, 13, Block[12], Block[13]);
+                G(state, 3, 4, 9, 14, Block[14], Block[15]);
+
+                // Round 1
+                // Mix the columns.
+                G(state, 0, 4, 8, 12, Block[2], Block[6]);
+                G(state, 1, 5, 9, 13, Block[3], Block[10]);
+                G(state, 2, 6, 10, 14, Block[7], Block[0]);
+                G(state, 3, 7, 11, 15, Block[4], Block[13]);
+
+                // Mix the rows.
+                G(state, 0, 5, 10, 15, Block[1], Block[11]);
+                G(state, 1, 6, 11, 12, Block[12], Block[5]);
+                G(state, 2, 7, 8, 13, Block[9], Block[14]);
+                G(state, 3, 4, 9, 14, Block[15], Block[8]);
+
+                // Round 2
+                // Mix the columns.
+                G(state, 0, 4, 8, 12, Block[3], Block[4]);
+                G(state, 1, 5, 9, 13, Block[10], Block[12]);
+                G(state, 2, 6, 10, 14, Block[13], Block[2]);
+                G(state, 3, 7, 11, 15, Block[7], Block[14]);
+
+                // Mix the rows.
+                G(state, 0, 5, 10, 15, Block[6], Block[5]);
+                G(state, 1, 6, 11, 12, Block[9], Block[0]);
+                G(state, 2, 7, 8, 13, Block[11], Block[15]);
+                G(state, 3, 4, 9, 14, Block[8], Block[1]);
+
+                // Round 3
+                // Mix the columns.
+                G(state, 0, 4, 8, 12, Block[10], Block[7]);
+                G(state, 1, 5, 9, 13, Block[12], Block[9]);
+                G(state, 2, 6, 10, 14, Block[14], Block[3]);
+                G(state, 3, 7, 11, 15, Block[13], Block[15]);
+
+                // Mix the rows.
+                G(state, 0, 5, 10, 15, Block[4], Block[0]);
+                G(state, 1, 6, 11, 12, Block[11], Block[2]);
+                G(state, 2, 7, 8, 13, Block[5], Block[8]);
+                G(state, 3, 4, 9, 14, Block[1], Block[6]);
+
+                // Round 4
+                // Mix the columns.
+                G(state, 0, 4, 8, 12, Block[12], Block[13]);
+                G(state, 1, 5, 9, 13, Block[9], Block[11]);
+                G(state, 2, 6, 10, 14, Block[15], Block[10]);
+                G(state, 3, 7, 11, 15, Block[14], Block[8]);
+
+                // Mix the rows.
+                G(state, 0, 5, 10, 15, Block[7], Block[2]);
+                G(state, 1, 6, 11, 12, Block[5], Block[3]);
+                G(state, 2, 7, 8, 13, Block[0], Block[1]);
+                G(state, 3, 4, 9, 14, Block[6], Block[4]);
+
+                // Round 5
+                // Mix the columns.
+                G(state, 0, 4, 8, 12, Block[9], Block[14]);
+                G(state, 1, 5, 9, 13, Block[11], Block[5]);
+                G(state, 2, 6, 10, 14, Block[8], Block[12]);
+                G(state, 3, 7, 11, 15, Block[15], Block[1]);
+
+                // Mix the rows.
+                G(state, 0, 5, 10, 15, Block[13], Block[3]);
+                G(state, 1, 6, 11, 12, Block[0], Block[10]);
+                G(state, 2, 7, 8, 13, Block[2], Block[6]);
+                G(state, 3, 4, 9, 14, Block[4], Block[7]);
+
+                // Round 6
+                // Mix the columns.
+                G(state, 0, 4, 8, 12, Block[11], Block[15]);
+                G(state, 1, 5, 9, 13, Block[5], Block[0]);
+                G(state, 2, 6, 10, 14, Block[1], Block[9]);
+                G(state, 3, 7, 11, 15, Block[8], Block[6]);
+
+                // Mix the rows.
+                G(state, 0, 5, 10, 15, Block[14], Block[10]);
+                G(state, 1, 6, 11, 12, Block[2], Block[12]);
+                G(state, 2, 7, 8, 13, Block[3], Block[4]);
+                G(state, 3, 4, 9, 14, Block[7], Block[13]);
+
+                // compression finalization
+
+                state[0] = state[0] ^ state[8];
+                state[1] = state[1] ^ state[9];
+                state[2] = state[2] ^ state[10];
+                state[3] = state[3] ^ state[11];
+                state[4] = state[4] ^ state[12];
+                state[5] = state[5] ^ state[13];
+                state[6] = state[6] ^ state[14];
+                state[7] = state[7] ^ state[15];
+                state[8] = state[8] ^ CV[0];
+                state[9] = state[9] ^ CV[1];
+                state[10] = state[10] ^ CV[2];
+                state[11] = state[11] ^ CV[3];
+                state[12] = state[12] ^ CV[4];
+                state[13] = state[13] ^ CV[5];
+                state[14] = state[14] ^ CV[6];
+                state[15] = state[15] ^ CV[7];
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private static void G(Span<uint> state, int a, int b, int c, int d, uint x, uint y)
+            {
+                var aa = state[a];
+                var bb = state[b];
+                var cc = state[c];
+                var dd = state[d];
+
+                unchecked
+                {
+                    aa = aa + bb + x;
+                    dd = Bits.RotateRight32(dd ^ aa, 16);
+                    cc += dd;
+                    bb = Bits.RotateRight32(bb ^ cc, 12);
+                    aa = aa + bb + y;
+                    dd = Bits.RotateRight32(dd ^ aa, 8);
+                    cc += dd;
+                    bb = Bits.RotateRight32(bb ^ cc, 7);
+                }
+
+                state[a] = aa;
+                state[b] = bb;
+                state[c] = cc;
+                state[d] = dd;
+            }
+        }
+
         // A Blake3Node represents a chunk or parent in the BLAKE3 Merkle tree. In BLAKE3
         // terminology, the elements of the bottom layer (aka "leaves") of the tree are
         // called chunk nodes, and the elements of upper layers (aka "interior nodes")
