@@ -517,17 +517,15 @@ namespace HashLib4CSharp.Crypto
             }
 
             // update incorporates input into the chunkState.
-            public unsafe void Update(byte* dataPtr, int dataLength)
+            public unsafe void Update(ReadOnlySpan<byte> data)
             {
-                var index = 0;
-
                 fixed (byte* blockPtr = _block)
                 {
                     fixed (uint* blockPtr2 = _n.Block)
                     {
                         fixed (uint* cvPtr = _n.CV)
                         {
-                            while (dataLength > 0)
+                            while (!data.IsEmpty)
                             {
                                 // If the block buffer is full, compress it and clear it. More
                                 // input is coming, so this compression is not flagChunkEnd.
@@ -543,13 +541,13 @@ namespace HashLib4CSharp.Crypto
                                 }
 
                                 // Copy input bytes into the chunk block.
-                                var count = Math.Min(BlockSizeInBytes - _blockLen, dataLength);
-                                PointerUtils.MemMove(blockPtr + _blockLen, dataPtr + index, count);
+                                var count = Math.Min(BlockSizeInBytes - _blockLen, data.Length);
+                                fixed(byte * dataPtr = &data[0])
+                                    PointerUtils.MemMove(blockPtr + _blockLen, dataPtr, count);
 
                                 _blockLen += count;
                                 BytesConsumed += count;
-                                index += count;
-                                dataLength -= count;
+                                data = data.Slice(count);
                             }
                         }
                     }
@@ -815,8 +813,7 @@ namespace HashLib4CSharp.Crypto
 
                     // Compress input bytes into the current chunk state.
                     var count = Math.Min(ChunkSize - ChunkState.BytesConsumed, length);
-                    fixed (byte* dataPtr2 = &dataSpan[0])
-                        ChunkState.Update(dataPtr2, count);
+                    ChunkState.Update(dataSpan.Slice(0, count));
 
                     dataSpan = dataSpan.Slice(count);
                     length -= count;
