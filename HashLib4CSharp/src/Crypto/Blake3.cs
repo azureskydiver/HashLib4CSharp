@@ -537,40 +537,37 @@ namespace HashLib4CSharp.Crypto
             }
 
             // update incorporates input into the chunkState.
-            public unsafe void Update(ReadOnlySpan<byte> data)
+            public void Update(ReadOnlySpan<byte> data)
             {
                 var blockSpan = _block.AsSpan();
                 var blockSpanAsUint = MemoryMarshal.Cast<byte, uint>(blockSpan);
 
-                fixed (uint* blockPtr2 = _n.Block)
+                while (!data.IsEmpty)
                 {
-                    fixed (uint* cvPtr = _n.CV)
+                    // If the block buffer is full, compress it and clear it. More
+                    // input is coming, so this compression is not flagChunkEnd.
+                    if (_blockLen == BlockSizeInBytes)
                     {
-                        while (!data.IsEmpty)
-                        {
-                            // If the block buffer is full, compress it and clear it. More
-                            // input is coming, so this compression is not flagChunkEnd.
-                            if (_blockLen == BlockSizeInBytes)
-                            {
-                                // copy the chunk block (bytes) into the node block and chain it.
-                                fixed(byte * blockPtr = _block)
-                                    Converters.le32_copy(blockPtr, 0, blockPtr2, 0, BlockSizeInBytes);
-                                _n.ChainingValue(cvPtr);
+                        //$ TODO: Handle blackSpanAsUint running on big endian
+                        _n.CV = Blake3Compressor.ComputeChainingValue(
+                                    cv: _n.CV,
+                                    block: blockSpanAsUint,
+                                    counter: _n.Counter,
+                                    blockLen: _n.BlockLen,
+                                    flags: _n.Flags);
 
-                                // clear the start flag for all but the first block
-                                _n.Flags &= _n.Flags ^ flagChunkStart;
-                                _blockLen = 0;
-                            }
-
-                            // Copy input bytes into the chunk block.
-                            var count = Math.Min(BlockSizeInBytes - _blockLen, data.Length);
-                            data.Slice(0, count).CopyTo(blockSpan.Slice(_blockLen));
-
-                            _blockLen += count;
-                            BytesConsumed += count;
-                            data = data.Slice(count);
-                        }
+                        // clear the start flag for all but the first block
+                        _n.Flags &= _n.Flags ^ flagChunkStart;
+                        _blockLen = 0;
                     }
+
+                    // Copy input bytes into the chunk block.
+                    var count = Math.Min(BlockSizeInBytes - _blockLen, data.Length);
+                    data.Slice(0, count).CopyTo(blockSpan.Slice(_blockLen));
+
+                    _blockLen += count;
+                    BytesConsumed += count;
+                    data = data.Slice(count);
                 }
             }
 
