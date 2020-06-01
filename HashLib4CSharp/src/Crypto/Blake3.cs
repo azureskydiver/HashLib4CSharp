@@ -796,33 +796,30 @@ namespace HashLib4CSharp.Crypto
             Debug.Assert(index + length <= data.Length);
 
             var chainingValue = new uint[8];
+            var dataSpan = new ReadOnlySpan<byte>(data, index, length);
 
             fixed (uint* chainingValuePtr = chainingValue)
             {
-                fixed (byte* dataPtr = data)
+                while (length > 0)
                 {
-                    var dataPtr2 = dataPtr + index;
-
-                    while (length > 0)
+                    // If the current chunk is complete, finalize it and add it to the tree,
+                    // then reset the chunk state (but keep incrementing the counter across
+                    // chunks).
+                    if (ChunkState.Complete())
                     {
-                        // If the current chunk is complete, finalize it and add it to the tree,
-                        // then reset the chunk state (but keep incrementing the counter across
-                        // chunks).
-                        if (ChunkState.Complete())
-                        {
-                            ChunkState.Node().ChainingValue(chainingValuePtr);
-                            AddChunkChainingValue(chainingValue);
-                            ChunkState =
-                                Blake3ChunkState.CreateBlake3ChunkState(Key, ChunkState.ChunkCounter() + 1, Flags);
-                        }
+                        ChunkState.Node().ChainingValue(chainingValuePtr);
+                        AddChunkChainingValue(chainingValue);
+                        ChunkState =
+                            Blake3ChunkState.CreateBlake3ChunkState(Key, ChunkState.ChunkCounter() + 1, Flags);
+                    }
 
-                        // Compress input bytes into the current chunk state.
-                        var count = Math.Min(ChunkSize - ChunkState.BytesConsumed, length);
+                    // Compress input bytes into the current chunk state.
+                    var count = Math.Min(ChunkSize - ChunkState.BytesConsumed, length);
+                    fixed (byte* dataPtr2 = &dataSpan[0])
                         ChunkState.Update(dataPtr2, count);
 
-                        dataPtr2 += count;
-                        length -= count;
-                    }
+                    dataSpan = dataSpan.Slice(count);
+                    length -= count;
                 }
             }
         }
