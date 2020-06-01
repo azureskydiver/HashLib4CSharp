@@ -13,6 +13,7 @@ for the purposes of supporting the XXX (https://YYY) project.
 
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using HashLib4CSharp.Base;
@@ -61,127 +62,143 @@ namespace HashLib4CSharp.Crypto
 
         protected static class Blake3Compressor
         {
+            public static uint[] ComputeChainingValue(ReadOnlySpan<uint> cv,
+                                                      ReadOnlySpan<uint> block,
+                                                      uint flags,
+                                                      uint blockLen,
+                                                      ulong counter = 0)
+            {
+                return Compress(cv: cv,
+                                block: block,
+                                flags: flags,
+                                blockLen: blockLen,
+                                counter: counter)
+                        .Take(8)
+                        .ToArray();
+            }
+
             // compress is the core hash function, generating 16 pseudorandom words from a
             // node.
             // NOTE: we unroll all of the rounds, as well as the permutations that occur
             // between rounds.
-            public static void Compress(Span<uint> state,
-                                        ReadOnlySpan<uint> CV,
-                                        ReadOnlySpan<uint> Block,
-                                        ulong Counter,
-                                        uint BlockLen,
-                                        uint Flags)
+            public static uint [] Compress(ReadOnlySpan<uint> cv,
+                                           ReadOnlySpan<uint> block,
+                                           uint flags,
+                                           uint blockLen,
+                                           ulong counter)
             {
                 // initializes state here
-                state[0] = CV[0];
-                state[1] = CV[1];
-                state[2] = CV[2];
-                state[3] = CV[3];
-                state[4] = CV[4];
-                state[5] = CV[5];
-                state[6] = CV[6];
-                state[7] = CV[7];
+                var state = new uint[16];
+
+                state[0] = cv[0];
+                state[1] = cv[1];
+                state[2] = cv[2];
+                state[3] = cv[3];
+                state[4] = cv[4];
+                state[5] = cv[5];
+                state[6] = cv[6];
+                state[7] = cv[7];
                 state[8] = Blake3.IV[0];
                 state[9] = Blake3.IV[1];
                 state[10] = Blake3.IV[2];
                 state[11] = Blake3.IV[3];
-                state[12] = (uint)Counter;
-                state[13] = (uint)(Counter >> 32);
-                state[14] = BlockLen;
-                state[15] = Flags;
+                state[12] = (uint)counter;
+                state[13] = (uint)(counter >> 32);
+                state[14] = blockLen;
+                state[15] = flags;
 
                 // NOTE: we unroll all of the rounds, as well as the permutations that occur
                 // between rounds.
                 // Round 0
                 // Mix the columns.
-                G(state, 0, 4, 8, 12, Block[0], Block[1]);
-                G(state, 1, 5, 9, 13, Block[2], Block[3]);
-                G(state, 2, 6, 10, 14, Block[4], Block[5]);
-                G(state, 3, 7, 11, 15, Block[6], Block[7]);
+                G(state, 0, 4, 8, 12, block[0], block[1]);
+                G(state, 1, 5, 9, 13, block[2], block[3]);
+                G(state, 2, 6, 10, 14, block[4], block[5]);
+                G(state, 3, 7, 11, 15, block[6], block[7]);
 
                 // Mix the rows.
-                G(state, 0, 5, 10, 15, Block[8], Block[9]);
-                G(state, 1, 6, 11, 12, Block[10], Block[11]);
-                G(state, 2, 7, 8, 13, Block[12], Block[13]);
-                G(state, 3, 4, 9, 14, Block[14], Block[15]);
+                G(state, 0, 5, 10, 15, block[8], block[9]);
+                G(state, 1, 6, 11, 12, block[10], block[11]);
+                G(state, 2, 7, 8, 13, block[12], block[13]);
+                G(state, 3, 4, 9, 14, block[14], block[15]);
 
                 // Round 1
                 // Mix the columns.
-                G(state, 0, 4, 8, 12, Block[2], Block[6]);
-                G(state, 1, 5, 9, 13, Block[3], Block[10]);
-                G(state, 2, 6, 10, 14, Block[7], Block[0]);
-                G(state, 3, 7, 11, 15, Block[4], Block[13]);
+                G(state, 0, 4, 8, 12, block[2], block[6]);
+                G(state, 1, 5, 9, 13, block[3], block[10]);
+                G(state, 2, 6, 10, 14, block[7], block[0]);
+                G(state, 3, 7, 11, 15, block[4], block[13]);
 
                 // Mix the rows.
-                G(state, 0, 5, 10, 15, Block[1], Block[11]);
-                G(state, 1, 6, 11, 12, Block[12], Block[5]);
-                G(state, 2, 7, 8, 13, Block[9], Block[14]);
-                G(state, 3, 4, 9, 14, Block[15], Block[8]);
+                G(state, 0, 5, 10, 15, block[1], block[11]);
+                G(state, 1, 6, 11, 12, block[12], block[5]);
+                G(state, 2, 7, 8, 13, block[9], block[14]);
+                G(state, 3, 4, 9, 14, block[15], block[8]);
 
                 // Round 2
                 // Mix the columns.
-                G(state, 0, 4, 8, 12, Block[3], Block[4]);
-                G(state, 1, 5, 9, 13, Block[10], Block[12]);
-                G(state, 2, 6, 10, 14, Block[13], Block[2]);
-                G(state, 3, 7, 11, 15, Block[7], Block[14]);
+                G(state, 0, 4, 8, 12, block[3], block[4]);
+                G(state, 1, 5, 9, 13, block[10], block[12]);
+                G(state, 2, 6, 10, 14, block[13], block[2]);
+                G(state, 3, 7, 11, 15, block[7], block[14]);
 
                 // Mix the rows.
-                G(state, 0, 5, 10, 15, Block[6], Block[5]);
-                G(state, 1, 6, 11, 12, Block[9], Block[0]);
-                G(state, 2, 7, 8, 13, Block[11], Block[15]);
-                G(state, 3, 4, 9, 14, Block[8], Block[1]);
+                G(state, 0, 5, 10, 15, block[6], block[5]);
+                G(state, 1, 6, 11, 12, block[9], block[0]);
+                G(state, 2, 7, 8, 13, block[11], block[15]);
+                G(state, 3, 4, 9, 14, block[8], block[1]);
 
                 // Round 3
                 // Mix the columns.
-                G(state, 0, 4, 8, 12, Block[10], Block[7]);
-                G(state, 1, 5, 9, 13, Block[12], Block[9]);
-                G(state, 2, 6, 10, 14, Block[14], Block[3]);
-                G(state, 3, 7, 11, 15, Block[13], Block[15]);
+                G(state, 0, 4, 8, 12, block[10], block[7]);
+                G(state, 1, 5, 9, 13, block[12], block[9]);
+                G(state, 2, 6, 10, 14, block[14], block[3]);
+                G(state, 3, 7, 11, 15, block[13], block[15]);
 
                 // Mix the rows.
-                G(state, 0, 5, 10, 15, Block[4], Block[0]);
-                G(state, 1, 6, 11, 12, Block[11], Block[2]);
-                G(state, 2, 7, 8, 13, Block[5], Block[8]);
-                G(state, 3, 4, 9, 14, Block[1], Block[6]);
+                G(state, 0, 5, 10, 15, block[4], block[0]);
+                G(state, 1, 6, 11, 12, block[11], block[2]);
+                G(state, 2, 7, 8, 13, block[5], block[8]);
+                G(state, 3, 4, 9, 14, block[1], block[6]);
 
                 // Round 4
                 // Mix the columns.
-                G(state, 0, 4, 8, 12, Block[12], Block[13]);
-                G(state, 1, 5, 9, 13, Block[9], Block[11]);
-                G(state, 2, 6, 10, 14, Block[15], Block[10]);
-                G(state, 3, 7, 11, 15, Block[14], Block[8]);
+                G(state, 0, 4, 8, 12, block[12], block[13]);
+                G(state, 1, 5, 9, 13, block[9], block[11]);
+                G(state, 2, 6, 10, 14, block[15], block[10]);
+                G(state, 3, 7, 11, 15, block[14], block[8]);
 
                 // Mix the rows.
-                G(state, 0, 5, 10, 15, Block[7], Block[2]);
-                G(state, 1, 6, 11, 12, Block[5], Block[3]);
-                G(state, 2, 7, 8, 13, Block[0], Block[1]);
-                G(state, 3, 4, 9, 14, Block[6], Block[4]);
+                G(state, 0, 5, 10, 15, block[7], block[2]);
+                G(state, 1, 6, 11, 12, block[5], block[3]);
+                G(state, 2, 7, 8, 13, block[0], block[1]);
+                G(state, 3, 4, 9, 14, block[6], block[4]);
 
                 // Round 5
                 // Mix the columns.
-                G(state, 0, 4, 8, 12, Block[9], Block[14]);
-                G(state, 1, 5, 9, 13, Block[11], Block[5]);
-                G(state, 2, 6, 10, 14, Block[8], Block[12]);
-                G(state, 3, 7, 11, 15, Block[15], Block[1]);
+                G(state, 0, 4, 8, 12, block[9], block[14]);
+                G(state, 1, 5, 9, 13, block[11], block[5]);
+                G(state, 2, 6, 10, 14, block[8], block[12]);
+                G(state, 3, 7, 11, 15, block[15], block[1]);
 
                 // Mix the rows.
-                G(state, 0, 5, 10, 15, Block[13], Block[3]);
-                G(state, 1, 6, 11, 12, Block[0], Block[10]);
-                G(state, 2, 7, 8, 13, Block[2], Block[6]);
-                G(state, 3, 4, 9, 14, Block[4], Block[7]);
+                G(state, 0, 5, 10, 15, block[13], block[3]);
+                G(state, 1, 6, 11, 12, block[0], block[10]);
+                G(state, 2, 7, 8, 13, block[2], block[6]);
+                G(state, 3, 4, 9, 14, block[4], block[7]);
 
                 // Round 6
                 // Mix the columns.
-                G(state, 0, 4, 8, 12, Block[11], Block[15]);
-                G(state, 1, 5, 9, 13, Block[5], Block[0]);
-                G(state, 2, 6, 10, 14, Block[1], Block[9]);
-                G(state, 3, 7, 11, 15, Block[8], Block[6]);
+                G(state, 0, 4, 8, 12, block[11], block[15]);
+                G(state, 1, 5, 9, 13, block[5], block[0]);
+                G(state, 2, 6, 10, 14, block[1], block[9]);
+                G(state, 3, 7, 11, 15, block[8], block[6]);
 
                 // Mix the rows.
-                G(state, 0, 5, 10, 15, Block[14], Block[10]);
-                G(state, 1, 6, 11, 12, Block[2], Block[12]);
-                G(state, 2, 7, 8, 13, Block[3], Block[4]);
-                G(state, 3, 4, 9, 14, Block[7], Block[13]);
+                G(state, 0, 5, 10, 15, block[14], block[10]);
+                G(state, 1, 6, 11, 12, block[2], block[12]);
+                G(state, 2, 7, 8, 13, block[3], block[4]);
+                G(state, 3, 4, 9, 14, block[7], block[13]);
 
                 // compression finalization
 
@@ -193,14 +210,16 @@ namespace HashLib4CSharp.Crypto
                 state[5] = state[5] ^ state[13];
                 state[6] = state[6] ^ state[14];
                 state[7] = state[7] ^ state[15];
-                state[8] = state[8] ^ CV[0];
-                state[9] = state[9] ^ CV[1];
-                state[10] = state[10] ^ CV[2];
-                state[11] = state[11] ^ CV[3];
-                state[12] = state[12] ^ CV[4];
-                state[13] = state[13] ^ CV[5];
-                state[14] = state[14] ^ CV[6];
-                state[15] = state[15] ^ CV[7];
+                state[8] = state[8] ^ cv[0];
+                state[9] = state[9] ^ cv[1];
+                state[10] = state[10] ^ cv[2];
+                state[11] = state[11] ^ cv[3];
+                state[12] = state[12] ^ cv[4];
+                state[13] = state[13] ^ cv[5];
+                state[14] = state[14] ^ cv[6];
+                state[15] = state[15] ^ cv[7];
+
+                return state;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -537,6 +556,7 @@ namespace HashLib4CSharp.Crypto
                                 fixed(byte * blockPtr = _block)
                                     Converters.le32_copy(blockPtr, 0, blockPtr2, 0, BlockSizeInBytes);
                                 _n.ChainingValue(cvPtr);
+
                                 // clear the start flag for all but the first block
                                 _n.Flags &= _n.Flags ^ flagChunkStart;
                                 _blockLen = 0;
