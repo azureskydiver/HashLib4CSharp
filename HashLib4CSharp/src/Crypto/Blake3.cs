@@ -511,8 +511,19 @@ namespace HashLib4CSharp.Crypto
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public ulong ChunkCounter() => _n.Counter;
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool Complete() => BytesConsumed == ChunkSize;
+            public bool IsComplete => BytesConsumed == ChunkSize;
+
+            public uint[] ComputeChunkEndChainingValue()
+            {
+                for (int i = _blockLen; i < BlockSizeInBytes; i++)
+                    _block[i] = 0;
+
+                return Blake3Compressor.ComputeChainingValue(cv: _n.CV,
+                                                             block: MemoryMarshal.Cast<byte, uint>(_block),
+                                                             flags: _n.Flags | flagChunkEnd,
+                                                             blockLen: (uint) _blockLen,
+                                                             counter: _n.Counter);
+            }
 
             // node returns a node containing the chunkState's current state, with the
             // ChunkEnd flag set.
@@ -548,7 +559,6 @@ namespace HashLib4CSharp.Crypto
                     // input is coming, so this compression is not flagChunkEnd.
                     if (_blockLen == BlockSizeInBytes)
                     {
-                        //$ TODO: Handle blackSpanAsUint running on big endian
                         _n.CV = Blake3Compressor.ComputeChainingValue(
                                     cv: _n.CV,
                                     block: blockSpanAsUint,
@@ -562,6 +572,7 @@ namespace HashLib4CSharp.Crypto
                     }
 
                     // Copy input bytes into the chunk block.
+                    //$ TODO: Handle blockSpanAsUint running on big endian
                     var count = Math.Min(BlockSizeInBytes - _blockLen, data.Length);
                     data.Slice(0, count).CopyTo(blockSpan.Slice(_blockLen));
 
@@ -674,17 +685,18 @@ namespace HashLib4CSharp.Crypto
         private bool HasSubTreeAtHeight(int idx) => (Used & ((uint) 1 << idx)) != 0;
 
         // AddChunkChainingValue appends a chunk to the right edge of the Merkle tree.
-        private unsafe void AddChunkChainingValue(uint[] cv)
+        private void AddChunkChainingValue(uint[] cv)
         {
             // seek to first open stack slot, merging subtrees as we go
             var idx = 0;
-            fixed (uint* cvPtr = cv)
+            while (HasSubTreeAtHeight(idx))
             {
-                while (HasSubTreeAtHeight(idx))
-                {
-                    Blake3Node.ParentNode(Stack[idx], cv, Key, Flags).ChainingValue(cvPtr);
-                    idx++;
-                }
+                cv = Blake3Compressor.ComputeChainingValue(cv: Key,
+                                                           block: ArrayUtils.Concatenate(Stack[idx], cv),
+                                                           flags: Flags | flagParent,
+                                                           blockLen: BlockSizeInBytes,
+                                                           counter: 0);
+                idx++;
             }
 
             Stack[idx] = ArrayUtils.Clone(cv);
@@ -803,38 +815,33 @@ namespace HashLib4CSharp.Crypto
             Used = 0;
         }
 
-        public override unsafe void TransformBytes(byte[] data, int index, int length)
+        public override void TransformBytes(byte[] data, int index, int length)
         {
             if (data == null) throw new ArgumentNullException(nameof(data));
             Debug.Assert(index >= 0);
             Debug.Assert(length >= 0);
             Debug.Assert(index + length <= data.Length);
 
-            var chainingValue = new uint[8];
             var dataSpan = new ReadOnlySpan<byte>(data, index, length);
 
-            fixed (uint* chainingValuePtr = chainingValue)
+            while (length > 0)
             {
-                while (length > 0)
+                // If the current chunk is complete, finalize it and add it to the tree,
+                // then reset the chunk state (but keep incrementing the counter across
+                // chunks).
+                if (ChunkState.IsComplete)
                 {
-                    // If the current chunk is complete, finalize it and add it to the tree,
-                    // then reset the chunk state (but keep incrementing the counter across
-                    // chunks).
-                    if (ChunkState.Complete())
-                    {
-                        ChunkState.Node().ChainingValue(chainingValuePtr);
-                        AddChunkChainingValue(chainingValue);
-                        ChunkState =
-                            Blake3ChunkState.CreateBlake3ChunkState(Key, ChunkState.ChunkCounter() + 1, Flags);
-                    }
-
-                    // Compress input bytes into the current chunk state.
-                    var count = Math.Min(ChunkSize - ChunkState.BytesConsumed, length);
-                    ChunkState.Update(dataSpan.Slice(0, count));
-
-                    dataSpan = dataSpan.Slice(count);
-                    length -= count;
+                    AddChunkChainingValue(ChunkState.ComputeChunkEndChainingValue());
+                    ChunkState =
+                        Blake3ChunkState.CreateBlake3ChunkState(Key, ChunkState.ChunkCounter() + 1, Flags);
                 }
+
+                // Compress input bytes into the current chunk state.
+                var count = Math.Min(ChunkSize - ChunkState.BytesConsumed, length);
+                ChunkState.Update(dataSpan.Slice(0, count));
+
+                dataSpan = dataSpan.Slice(count);
+                length -= count;
             }
         }
 
